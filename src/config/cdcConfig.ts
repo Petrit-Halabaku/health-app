@@ -25,7 +25,7 @@ export const API_CAUSE_MAPPING: Record<string, string> = {
   'septicemia': 'Septicemia',
   'malignant_neoplasms': 'Malignant Neoplasms',
   'diabetes_mellitus': 'Diabetes Mellitus',
-  'alzheimer': "Alzheimer's Disease",
+  'alzheimer_disease': "Alzheimer's Disease",
   'influenza_and_pneumonia': 'Influenza and Pneumonia',
   'chronic_lower_respiratory': 'Chronic Lower Respiratory',
   'other_diseases_of_respiratory': 'Other Respiratory Diseases',

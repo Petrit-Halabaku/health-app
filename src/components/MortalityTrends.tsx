@@ -6,6 +6,8 @@ import { Line } from 'react-chartjs-2';
 import { LoadingSpinner } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
 import { MultiSelect } from './MultiSelect';
+import { colorForIndex } from '../design/tokens';
+import { applyChartTheme } from '../design/chartTheme';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -14,18 +16,11 @@ import {
   LineElement,
   Title,
   Tooltip,
-  Legend
+  Legend,
 } from 'chart.js';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+applyChartTheme();
 
 const DEMOGRAPHIC_GROUPS = [
   'White - Male',
@@ -33,8 +28,12 @@ const DEMOGRAPHIC_GROUPS = [
   'Black - Male',
   'Black - Female',
   'All Races - Male',
-  'All Races - Female'
+  'All Races - Female',
 ];
+
+const GROUP_COLOR: Record<string, string> = Object.fromEntries(
+  DEMOGRAPHIC_GROUPS.map((g, i) => [g, colorForIndex(i)]),
+);
 
 export const MortalityTrends: React.FC = () => {
   const [data, setData] = useState<MortalityTrendData[]>([]);
@@ -47,94 +46,76 @@ export const MortalityTrends: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const trendsData = await fetchMortalityTrends();
-        setData(trendsData);
+        setData(await fetchMortalityTrends());
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load mortality trends');
       } finally {
         setLoading(false);
       }
     };
-
     loadData();
   }, []);
 
-  const chartData = React.useMemo(() => {
-    const uniqueYears = [...new Set(data.map(d => d.year))].sort();
+  const uniqueYears = React.useMemo(
+    () => [...new Set(data.map((d) => d.year))].sort(),
+    [data],
+  );
 
-    const colors = {
-      'White - Male': 'rgb(59, 130, 246)',
-      'White - Female': 'rgb(236, 72, 153)',
-      'Black - Male': 'rgb(245, 158, 11)',
-      'Black - Female': 'rgb(16, 185, 129)',
-      'All Races - Male': 'rgb(99, 102, 241)',
-      'All Races - Female': 'rgb(217, 70, 239)'
-    };
-
-    return {
+  const chartData = React.useMemo(
+    () => ({
       labels: uniqueYears,
-      datasets: selectedGroups.map(category => ({
-        label: category,
-        data: uniqueYears.map(year => {
-          const yearData = data.find(d => 
-            d.year === year && 
-            `${d.race} - ${d.sex}` === category
-          );
-          return yearData ? parseFloat(yearData.life_expectancy) : null;
-        }),
-        borderColor: colors[category as keyof typeof colors] || '#666',
-        backgroundColor: `${colors[category as keyof typeof colors]}22` || '#66666622',
-        tension: 0.4,
-        fill: true,
-      }))
-    };
-  }, [data, selectedGroups]);
+      datasets: selectedGroups.map((category) => {
+        const color = GROUP_COLOR[category] || '#586068';
+        return {
+          label: category,
+          data: uniqueYears.map((year) => {
+            const yearData = data.find((d) => d.year === year && `${d.race} - ${d.sex}` === category);
+            return yearData ? parseFloat(yearData.life_expectancy) : null;
+          }),
+          borderColor: color,
+          backgroundColor: color,
+          borderWidth: 2,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 5,
+          spanGaps: true,
+        };
+      }),
+    }),
+    [data, selectedGroups, uniqueYears],
+  );
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { mode: 'index' as const, intersect: false },
     plugins: {
-      legend: {
-        position: 'top' as const,
-      },
+      legend: { position: 'bottom' as const, align: 'start' as const },
+      title: { display: false },
       tooltip: {
         callbacks: {
-          label: (context: any) => {
-            const value = context.parsed.y.toFixed(1);
-            return `${context.dataset.label}: ${value} years`;
-          }
-        }
+          label: (context: { dataset: { label?: string }; parsed: { y: number } }) =>
+            `${context.dataset.label}: ${context.parsed.y.toFixed(1)} yrs`,
+        },
       },
-      title: {
-        display: true,
-        text: 'Life Expectancy at Birth by Race and Sex (1900-Present)',
-        font: { size: 16, weight: 'bold' }
-      }
     },
     scales: {
       y: {
         beginAtZero: false,
-        title: {
-          display: true,
-          text: 'Life Expectancy (Years)'
-        }
+        title: { display: true, text: 'Life expectancy (years)', color: '#8B939B', font: { size: 11 } },
       },
       x: {
-        title: {
-          display: true,
-          text: 'Year'
-        },
+        grid: { display: false },
         ticks: {
-          maxRotation: 45,
-          minRotation: 45,
-          callback: (value: any, index: number, values: any[]) => {
-            const year = chartData.labels[index];
-            return parseInt(year as string) % 5 === 0 ? year : '';
+          autoSkip: false,
+          maxRotation: 0,
+          callback: (_value: string | number, index: number) => {
+            const year = uniqueYears[index];
+            return year && parseInt(year) % 10 === 0 ? year : '';
           },
-          autoSkip: false
-        }
-      }
-    }
+        },
+      },
+    },
   };
 
   if (loading) return <LoadingSpinner />;
@@ -142,47 +123,46 @@ export const MortalityTrends: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">
-          U.S. Life Expectancy Trends (1900-Present)
-        </h2>
-        <p className="text-gray-600 mb-4">
-          Historical trends in life expectancy at birth, showing the evolution of public health 
-          outcomes across different demographic groups over more than a century.
-        </p>
-        
-        <div className="mt-4">
+      <div className="rounded-card border border-ink-line bg-paper-raised p-5 shadow-card sm:p-6">
+        <div className="w-full lg:max-w-xl">
           <MultiSelect
-            label="Demographic Groups"
+            label="Demographic groups"
             options={DEMOGRAPHIC_GROUPS}
             value={selectedGroups}
             onChange={setSelectedGroups}
-            placeholder="Select demographic groups..."
+            placeholder="Select demographic groups…"
           />
         </div>
       </div>
 
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <div className="h-[600px]">
+      <DashboardCard kicker="1900 — present" title="Life expectancy at birth">
+        <div className="h-[520px]">
           {selectedGroups.length > 0 ? (
             <Line data={chartData} options={chartOptions} />
           ) : (
-            <div className="h-full flex items-center justify-center text-gray-500">
-              Please select at least one demographic group to display data
+            <div className="flex h-full items-center justify-center text-sm text-ink-faint">
+              Select at least one demographic group to display data
             </div>
           )}
         </div>
 
-        <div className="mt-6 text-sm text-gray-600">
-          <h3 className="font-semibold mb-2">Key Insights:</h3>
-          <ul className="list-disc list-inside space-y-1">
-            <li>Life expectancy has increased dramatically since 1900 across all demographics</li>
-            <li>The gap between racial and gender groups has narrowed but persists</li>
-            <li>Women consistently show higher life expectancy than men</li>
-            <li>Major health events and social changes are reflected in life expectancy trends</li>
+        <div className="mt-6 border-t border-ink-line pt-5">
+          <p className="eyebrow mb-3">Key insights</p>
+          <ul className="grid gap-2 text-sm text-ink-mute sm:grid-cols-2">
+            {[
+              'Life expectancy has risen dramatically since 1900 across every group.',
+              'Gaps between racial and gender groups have narrowed but persist.',
+              'Women consistently outlive men in every period.',
+              'Major health and social events leave visible marks on the curve.',
+            ].map((point) => (
+              <li key={point} className="flex gap-2.5">
+                <span className="mt-2 h-1 w-1 shrink-0 rounded-full bg-brand" />
+                {point}
+              </li>
+            ))}
           </ul>
         </div>
-      </div>
+      </DashboardCard>
     </div>
   );
 };
