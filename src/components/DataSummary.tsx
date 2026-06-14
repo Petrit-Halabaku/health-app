@@ -1,171 +1,171 @@
 import React from 'react';
 import type { CDCDataPoint } from '../types/cdc';
 import { DashboardCard } from './DashboardCard';
-import { Activity, Users, Calendar } from 'lucide-react';
 import { AVAILABLE_YEARS } from '../config/cdcConfig';
 import { Doughnut } from 'react-chartjs-2';
-import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js';
+import { Chart as ChartJS, ArcElement, Title, Tooltip, Legend, type TooltipItem } from 'chart.js';
+import { DATA_PALETTE, INK_FAINT, PAPER_RAISED } from '../design/tokens';
+import { applyChartTheme } from '../design/chartTheme';
 
-ChartJS.register(ArcElement, Tooltip, Legend);
+ChartJS.register(ArcElement, Title, Tooltip, Legend);
+applyChartTheme();
 
 interface DataSummaryProps {
   data: CDCDataPoint[];
   selectedCauses: string[];
 }
 
-export const DataSummary: React.FC<DataSummaryProps> = ({
-  data,
-  selectedCauses,
-}) => {
+export const DataSummary: React.FC<DataSummaryProps> = ({ data, selectedCauses }) => {
   const years = AVAILABLE_YEARS.slice(0, 6); // 2014 to 2019
 
   const filteredData = React.useMemo(() => {
-    return data.filter(item => {
+    return data.filter((item) => {
       const yearMatch = years.includes(item.year);
-      const causeMatch = selectedCauses.length === 0 || selectedCauses.includes(item.cause_name);
+      // Unfiltered, summarise the "All Causes" total (avoids double-counting overlapping causes).
+      const causeMatch =
+        selectedCauses.length === 0
+          ? item.cause_name === 'All Causes'
+          : selectedCauses.includes(item.cause_name);
       return yearMatch && causeMatch;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, selectedCauses]);
 
   const stats = React.useMemo(() => {
     if (!filteredData.length) return null;
-
-    const rates = filteredData.map(item => parseFloat(item.crude_rate) || 0);
-    const totalDeaths = filteredData.reduce((sum, item) => sum + (parseInt(item.deaths) || 0), 0);
-    const totalPopulation = filteredData.reduce((sum, item) => sum + (parseInt(item.population) || 0), 0);
-    const averageRate = rates.reduce((a, b) => a + b, 0) / rates.length;
-
-    return {
-      averageRate,
-      totalDeaths,
-      totalPopulation
-    };
+    const deaths = filteredData.map((item) => parseInt(item.deaths) || 0);
+    const totalDeaths = deaths.reduce((a, b) => a + b, 0);
+    const avgMonthly = Math.round(totalDeaths / deaths.length);
+    const peakMonth = Math.max(...deaths);
+    return { totalDeaths, avgMonthly, peakMonth };
   }, [filteredData]);
 
-  const donutData = React.useMemo(() => {
-    // Filter data for all years and exclude all/natural causes
-    const relevantData = data.filter(item => 
-      years.includes(item.year) && 
-      item.cause_name !== 'All Causes' && 
-      item.cause_name !== 'Natural Causes'
+  const donut = React.useMemo(() => {
+    const relevant = data.filter(
+      (item) =>
+        years.includes(item.year) &&
+        item.cause_name !== 'All Causes' &&
+        item.cause_name !== 'Natural Causes',
     );
-
-    // Group by cause and sum deaths
-    const causeDeaths = relevantData.reduce((acc, item) => {
-      const cause = item.cause_name;
-      if (!acc[cause]) {
-        acc[cause] = 0;
-      }
-      acc[cause] += parseInt(item.deaths) || 0;
+    const causeDeaths = relevant.reduce((acc, item) => {
+      acc[item.cause_name] = (acc[item.cause_name] || 0) + (parseInt(item.deaths) || 0);
       return acc;
     }, {} as Record<string, number>);
 
-    // Sort causes by total deaths and get top 8
-    const sortedCauses = Object.entries(causeDeaths)
-      .sort(([, a], [, b]) => b - a);
-    
-    const topCauses = sortedCauses.slice(0, 8);
-    const otherCauses = sortedCauses.slice(8);
-
-    const otherDeaths = otherCauses.reduce((sum, [, deaths]) => sum + deaths, 0);
-
-    const colors = [
-      '#2563eb', '#7c3aed', '#db2777', '#dc2626',
-      '#ea580c', '#65a30d', '#0d9488', '#6366f1',
-      '#94a3b8' // for "Other"
-    ];
+    const sorted = Object.entries(causeDeaths).sort(([, a], [, b]) => b - a);
+    const top = sorted.slice(0, 7);
+    const otherDeaths = sorted.slice(7).reduce((sum, [, d]) => sum + d, 0);
+    const colors = [...DATA_PALETTE.slice(0, 7), '#B6B7AC'];
+    const total = top.reduce((s, [, d]) => s + d, 0) + otherDeaths;
 
     return {
-      labels: [...topCauses.map(([cause]) => cause), 'Other'],
-      datasets: [{
-        data: [...topCauses.map(([, deaths]) => deaths), otherDeaths],
-        backgroundColor: colors,
-        borderColor: colors.map(color => `${color}22`),
-        borderWidth: 1,
-        hoverOffset: 4
-      }]
+      total,
+      chart: {
+        labels: [...top.map(([cause]) => cause), 'Other'],
+        datasets: [
+          {
+            data: [...top.map(([, deaths]) => deaths), otherDeaths],
+            backgroundColor: colors,
+            borderColor: PAPER_RAISED,
+            borderWidth: 2,
+            hoverOffset: 6,
+          },
+        ],
+      },
     };
-  }, [data, years]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data]);
 
   const donutOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    cutout: '66%',
     plugins: {
       legend: {
         position: 'bottom' as const,
-        display: true,
-        labels: {
-          boxWidth: 12,
-          padding: 8,
-          font: {
-            size: 11
-          }
-        }
+        labels: { boxWidth: 7, boxHeight: 7, padding: 11, color: INK_FAINT, font: { size: 10.5 } },
       },
       tooltip: {
         callbacks: {
-          label: (context: any) => {
-            const value = context.raw;
-            const total = context.dataset.data.reduce((a: number, b: number) => a + b, 0);
-            const percentage = ((value / total) * 100).toFixed(1);
-            return `${context.label}: ${value.toLocaleString()} (${percentage}%)`;
-          }
-        }
-      }
+          label: (context: TooltipItem<'doughnut'>) => {
+            const value = context.raw as number;
+            const total = (context.dataset.data as number[]).reduce((a, b) => a + b, 0);
+            const pct = ((value / total) * 100).toFixed(1);
+            return `${context.label}: ${value.toLocaleString()} (${pct}%)`;
+          },
+        },
+      },
     },
-    cutout: '60%'
   };
+
+  const metrics = stats
+    ? [
+        {
+          accent: DATA_PALETTE[3],
+          value: stats.totalDeaths.toLocaleString(),
+          label: 'Total deaths',
+          sub: 'recorded, 2014–2019',
+        },
+        {
+          accent: DATA_PALETTE[0],
+          value: stats.avgMonthly.toLocaleString(),
+          label: 'Monthly average',
+          sub: 'deaths per month',
+        },
+        {
+          accent: DATA_PALETTE[1],
+          value: stats.peakMonth.toLocaleString(),
+          label: 'Peak month',
+          sub: 'highest monthly total',
+        },
+      ]
+    : [];
 
   if (!stats) {
     return (
-      <DashboardCard title="Statistics Summary">
-        <p className="text-gray-500 text-center">No data available</p>
+      <DashboardCard title="Summary">
+        <p className="py-8 text-center text-sm text-ink-faint">No data available</p>
       </DashboardCard>
     );
   }
 
   return (
     <div className="space-y-6">
-      <DashboardCard title="Statistics Summary">
-        <div className="space-y-4">
-          <div className="bg-blue-50 rounded-lg p-4">
-            <div className="flex items-center">
-              <Activity className="h-8 w-8 text-blue-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-blue-600">Death Rate</p>
-                <p className="text-2xl font-bold text-blue-900">{stats.averageRate.toFixed(1)}</p>
-                <p className="text-sm text-blue-700">per 100,000 population</p>
-              </div>
+      <DashboardCard kicker="At a glance" title="Summary">
+        <div className="space-y-3">
+          {metrics.map((m) => (
+            <div
+              key={m.label}
+              className="relative overflow-hidden rounded-lg border border-ink-line bg-paper py-3.5 pl-5 pr-4"
+            >
+              <span
+                className="absolute inset-y-0 left-0 w-1"
+                style={{ backgroundColor: m.accent }}
+                aria-hidden="true"
+              />
+              <p className="font-mono text-[0.7rem] uppercase tracking-[0.14em] text-ink-faint">
+                {m.label}
+              </p>
+              <p className="nums mt-0.5 font-display text-2xl font-medium leading-tight text-ink">
+                {m.value}
+              </p>
+              <p className="text-xs text-ink-mute">{m.sub}</p>
             </div>
-          </div>
-
-          <div className="bg-green-50 rounded-lg p-4">
-            <div className="flex items-center">
-              <Users className="h-8 w-8 text-green-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-green-600">Total Deaths</p>
-                <p className="text-2xl font-bold text-green-900">{stats.totalDeaths.toLocaleString()}</p>
-                <p className="text-sm text-green-700">recorded cases</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-purple-50 rounded-lg p-4">
-            <div className="flex items-center">
-              <Calendar className="h-8 w-8 text-purple-600" />
-              <div className="ml-4">
-                <p className="text-sm font-medium text-purple-600">Total Population</p>
-                <p className="text-2xl font-bold text-purple-900">{stats.totalPopulation.toLocaleString()}</p>
-                <p className="text-sm text-purple-700">covered population</p>
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
       </DashboardCard>
 
-      <DashboardCard title="Leading Causes of Death (2014-2019)">
-        <div className="h-[300px] relative">
-          <Doughnut data={donutData} options={donutOptions} />
+      <DashboardCard kicker="2014–2019" title="Leading causes">
+        <div className="relative h-[320px]">
+          <Doughnut data={donut.chart} options={donutOptions} />
+          <div className="pointer-events-none absolute inset-x-0 top-[38%] flex -translate-y-1/2 flex-col items-center">
+            <span className="nums font-display text-2xl font-medium leading-none text-ink">
+              {(donut.total / 1_000_000).toFixed(1)}M
+            </span>
+            <span className="font-mono text-[0.65rem] uppercase tracking-[0.14em] text-ink-faint">
+              total deaths
+            </span>
+          </div>
         </div>
       </DashboardCard>
     </div>

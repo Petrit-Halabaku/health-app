@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, X } from 'lucide-react';
 
 interface MultiSelectProps {
   options: string[];
@@ -14,7 +14,7 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
   value = [],
   onChange,
   label,
-  placeholder = 'Select options...'
+  placeholder = 'Select options...',
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -25,76 +25,76 @@ export const MultiSelect: React.FC<MultiSelectProps> = ({
         setIsOpen(false);
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const toggleOption = (option: string) => {
     const newValue = value.includes(option)
-      ? value.filter(item => item !== option)
+      ? value.filter((item) => item !== option)
       : [...value, option];
     onChange(newValue);
   };
 
   return (
     <div className="relative" ref={containerRef}>
-      <label className="block text-sm font-medium text-gray-700 mb-1">
-        {label}
-      </label>
-      <div
-        className="relative cursor-pointer"
+      <label className="eyebrow mb-2 block">{label}</label>
+      <button
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        className="relative w-full cursor-pointer rounded-lg border border-ink-line bg-paper px-3.5 py-2.5 text-left transition-colors duration-200 hover:border-ink-faint focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
       >
-        <div className="min-h-[42px] w-full rounded-md border border-gray-300 bg-white px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
-          {value.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {value.map(item => (
-                <span
-                  key={item}
-                  className="inline-flex items-center px-2 py-0.5 rounded-md text-sm font-medium bg-blue-100 text-blue-800"
-                  onClick={e => {
-                    e.stopPropagation();
-                    toggleOption(item);
-                  }}
-                >
-                  {item}
-                  <button
-                    type="button"
-                    className="ml-1 inline-flex items-center"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <span className="text-gray-500">{placeholder}</span>
-          )}
-        </div>
-        <span className="absolute right-3 top-1/2 -translate-y-1/2">
-          <ChevronDown className="h-5 w-5 text-gray-400" />
-        </span>
-      </div>
-      {isOpen && options.length > 0 && (
-        <div className="absolute z-10 mt-1 w-full rounded-md bg-white shadow-lg ring-1 ring-black ring-opacity-5">
-          <div className="max-h-60 overflow-auto py-1">
-            {options.map(option => (
-              <div
-                key={option}
-                className={`relative cursor-pointer select-none py-2 pl-3 pr-9 hover:bg-blue-50 ${
-                  value.includes(option) ? 'bg-blue-50' : ''
-                }`}
-                onClick={() => toggleOption(option)}
+        {value.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5 pr-7">
+            {value.map((item) => (
+              <span
+                key={item}
+                className="inline-flex items-center gap-1 rounded-pill bg-brand-wash px-2.5 py-0.5 text-xs font-medium text-brand-dark"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleOption(item);
+                }}
               >
-                <span className="block truncate">{option}</span>
-                {value.includes(option) && (
-                  <span className="absolute inset-y-0 right-0 flex items-center pr-4">
-                    <Check className="h-4 w-4 text-blue-600" />
-                  </span>
-                )}
-              </div>
+                {item}
+                <X className="h-3 w-3 opacity-60 transition-opacity hover:opacity-100" />
+              </span>
             ))}
+          </div>
+        ) : (
+          <span className="text-ink-faint">{placeholder}</span>
+        )}
+        <ChevronDown
+          className={`pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint transition-transform duration-300 ${
+            isOpen ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {isOpen && options.length > 0 && (
+        <div
+          role="listbox"
+          className="absolute z-30 mt-2 w-full overflow-hidden rounded-lg border border-ink-line bg-paper-raised shadow-float"
+        >
+          <div className="max-h-64 overflow-auto py-1">
+            {options.map((option) => {
+              const selected = value.includes(option);
+              return (
+                <div
+                  key={option}
+                  role="option"
+                  aria-selected={selected}
+                  className={`relative flex cursor-pointer select-none items-center justify-between py-2 pl-3.5 pr-3 text-sm transition-colors ${
+                    selected ? 'bg-brand-wash text-brand-dark' : 'text-ink-soft hover:bg-paper-dim'
+                  }`}
+                  onClick={() => toggleOption(option)}
+                >
+                  <span className="truncate">{option}</span>
+                  {selected && <Check className="h-4 w-4 shrink-0 text-brand" strokeWidth={2.2} />}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

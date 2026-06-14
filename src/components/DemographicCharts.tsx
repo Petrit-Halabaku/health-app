@@ -5,6 +5,8 @@ import type { CDCDemographicData } from '../types/cdc';
 import { Bar, Line } from 'react-chartjs-2';
 import { LoadingSpinner } from './LoadingSpinner';
 import { ErrorMessage } from './ErrorMessage';
+import { colorForIndex, DATA_PALETTE, withAlpha } from '../design/tokens';
+import { applyChartTheme } from '../design/chartTheme';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -12,21 +14,16 @@ import {
   BarElement,
   LineElement,
   PointElement,
+  Filler,
   Title,
   Tooltip,
-  Legend
+  Legend,
 } from 'chart.js';
 
-ChartJS.register(
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  LineElement,
-  PointElement,
-  Title,
-  Tooltip,
-  Legend
-);
+ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, Filler, Title, Tooltip, Legend);
+applyChartTheme();
+
+const YEARS = ['2015', '2016', '2017', '2018', '2019', '2020'];
 
 export const DemographicCharts: React.FC = () => {
   const [data, setData] = useState<CDCDemographicData[]>([]);
@@ -38,154 +35,116 @@ export const DemographicCharts: React.FC = () => {
       try {
         setLoading(true);
         setError(null);
-        const demographicData = await fetchDemographicData();
-        setData(demographicData);
+        setData(await fetchDemographicData());
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load demographic data');
       } finally {
         setLoading(false);
       }
     };
-
     loadData();
   }, []);
 
-  const ageGroupData = React.useMemo(() => {
-    const years = ['2015', '2016', '2017', '2018', '2019', '2020'];
-    
-    return {
-      labels: [...new Set(data.map(d => d.age_group))].sort(),
-      datasets: years.map((year, index) => ({
-        label: year,
-        data: [...new Set(data.map(d => d.age_group))].sort().map(age => {
-          const yearData = data.filter(d => d.year === year && d.age_group === age);
-          return yearData.reduce((sum, d) => sum + parseInt(d.deaths), 0);
-        }),
-        backgroundColor: `hsla(${index * 60}, 70%, 50%, 0.7)`,
-        borderColor: `hsla(${index * 60}, 70%, 50%, 1)`,
-        borderWidth: 1,
-      }))
-    };
-  }, [data]);
+  const ageGroups = React.useMemo(
+    () => [...new Set(data.map((d) => d.age_group))].sort(),
+    [data],
+  );
+
+  const ageGroupData = React.useMemo(
+    () => ({
+      labels: ageGroups,
+      datasets: YEARS.map((year, index) => {
+        const color = colorForIndex(index);
+        return {
+          label: year,
+          data: ageGroups.map((age) =>
+            data
+              .filter((d) => d.year === year && d.age_group === age)
+              .reduce((sum, d) => sum + parseInt(d.deaths), 0),
+          ),
+          backgroundColor: withAlpha(color, 0.85),
+          borderColor: color,
+          borderWidth: 0,
+          borderRadius: 3,
+          maxBarThickness: 22,
+        };
+      }),
+    }),
+    [data, ageGroups],
+  );
 
   const genderTrendData = React.useMemo(() => {
-    const years = ['2015', '2016', '2017', '2018', '2019', '2020'];
-    const genderLabels = { 'F': 'Female', 'M': 'Male' };
-    
+    const map: Record<string, { label: string; color: string }> = {
+      F: { label: 'Female', color: DATA_PALETTE[3] },
+      M: { label: 'Male', color: DATA_PALETTE[1] },
+    };
     return {
-      labels: years,
-      datasets: Object.entries(genderLabels).map(([gender, label]) => ({
+      labels: YEARS,
+      datasets: Object.entries(map).map(([gender, { label, color }]) => ({
         label,
-        data: years.map(year => {
-          const yearGenderData = data.filter(d => d.year === year && d.sex === gender);
-          return yearGenderData.reduce((sum, d) => sum + parseInt(d.deaths), 0);
-        }),
-        backgroundColor: gender === 'F' ? 'rgba(236, 72, 153, 0.7)' : 'rgba(59, 130, 246, 0.7)',
-        borderColor: gender === 'F' ? 'rgb(236, 72, 153)' : 'rgb(59, 130, 246)',
+        data: YEARS.map((year) =>
+          data
+            .filter((d) => d.year === year && d.sex === gender)
+            .reduce((sum, d) => sum + parseInt(d.deaths), 0),
+        ),
+        backgroundColor: withAlpha(color, 0.12),
+        borderColor: color,
         borderWidth: 2,
         tension: 0.4,
         fill: true,
-      }))
+        pointRadius: 0,
+        pointHoverRadius: 5,
+        pointBackgroundColor: color,
+      })),
     };
   }, [data]);
 
-  const chartOptions = {
+  const baseOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    interaction: { mode: 'index' as const, intersect: false },
     plugins: {
-      legend: {
-        position: 'top' as const,
-      },
+      legend: { position: 'bottom' as const, align: 'start' as const },
+      title: { display: false },
       tooltip: {
         callbacks: {
-          label: (context: any) => {
-            return `${context.dataset.label}: ${parseInt(context.parsed.y).toLocaleString()} deaths`;
-          }
-        }
-      }
+          label: (context: { dataset: { label?: string }; parsed: { y: number } }) =>
+            `${context.dataset.label}: ${Math.round(context.parsed.y).toLocaleString()} deaths`,
+        },
+      },
     },
     scales: {
       y: {
         beginAtZero: true,
-        title: {
-          display: true,
-          text: 'Number of Deaths'
-        },
-        ticks: {
-          callback: (value: number) => value.toLocaleString()
-        }
+        ticks: { callback: (value: string | number) => Number(value).toLocaleString() },
       },
-      x: {
-        ticks: {
-          maxRotation: 45,
-          minRotation: 45
-        }
-      }
-    }
+      x: { grid: { display: false } },
+    },
   };
 
   if (loading) return <LoadingSpinner />;
   if (error) return <ErrorMessage message={error} />;
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white rounded-lg shadow-sm p-6">
-        <h2 className="text-2xl font-bold text-gray-900 mb-6">
-          Demographic Mortality Analysis (2015-2020)
-        </h2>
-        <p className="text-gray-600 mb-4">
-          Analysis of mortality patterns across age groups and gender, showing trends
-          over the period from 2015 to 2020.
+    <div className="grid grid-cols-1 gap-6">
+      <DashboardCard kicker="2015–2020" title="Deaths by age group">
+        <div className="h-[460px]">
+          <Bar data={ageGroupData} options={baseOptions} />
+        </div>
+        <p className="mt-4 max-w-prose text-sm text-ink-mute">
+          Mortality concentrates sharply in the oldest age bands — and the height of those bars has
+          climbed year over year, most visibly in 2020.
         </p>
-      </div>
+      </DashboardCard>
 
-      <div className="grid grid-cols-1 gap-6">
-        <DashboardCard title="Deaths by Age Group">
-          <div className="h-[500px]">
-            <Bar 
-              data={ageGroupData} 
-              options={{
-                ...chartOptions,
-                plugins: {
-                  ...chartOptions.plugins,
-                  title: {
-                    display: true,
-                    text: 'Mortality Distribution by Age Group (2015-2020)',
-                    font: { size: 16, weight: 'bold' }
-                  }
-                }
-              }} 
-            />
-          </div>
-          <div className="mt-4 text-sm text-gray-600">
-            <p>Distribution of deaths across different age groups, showing how mortality
-            patterns vary with age and their changes over time.</p>
-          </div>
-        </DashboardCard>
-
-        <DashboardCard title="Gender-based Mortality Trends">
-          <div className="h-[400px]">
-            <Line 
-              data={genderTrendData} 
-              options={{
-                ...chartOptions,
-                plugins: {
-                  ...chartOptions.plugins,
-                  title: {
-                    display: true,
-                    text: 'Deaths by Gender Over Time (2015-2020)',
-                    font: { size: 16, weight: 'bold' }
-                  }
-                }
-              }} 
-            />
-          </div>
-          <div className="mt-4 text-sm text-gray-600">
-            <p>Comparison of mortality trends between males and females, highlighting
-            gender-based differences in death rates over the years.</p>
-          </div>
-        </DashboardCard>
-      </div>
+      <DashboardCard kicker="2015–2020" title="Mortality by sex">
+        <div className="h-[380px]">
+          <Line data={genderTrendData} options={baseOptions} />
+        </div>
+        <p className="mt-4 max-w-prose text-sm text-ink-mute">
+          Recorded deaths among men and women tracked closely until 2020, when both rose together.
+        </p>
+      </DashboardCard>
     </div>
   );
 };
